@@ -9,3 +9,7 @@ repository = "https://github.com/Patman1O1/rust-linalg"
 license = "MIT"
 license-file = "LICENSE"
 build = "build.rs"
+
+[dependencies]
+num-rational = "0.4.2"
+num-traits = "0.2.19"
