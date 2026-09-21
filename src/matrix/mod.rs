@@ -1,7 +1,15 @@
 // ── Aliases ─────────────────────────────────────────────────────────────────
 use core::{
     fmt::{self, Write},
-    ops::{Add, AddAssign, Sub, SubAssign, Index, IndexMut}
+    ops::{
+        Add,
+        AddAssign,
+        Mul,
+        Sub,
+        SubAssign,
+        Index,
+        IndexMut
+    }
 };
 
 // ── Modules ─────────────────────────────────────────────────────────────────
@@ -25,6 +33,9 @@ impl<const M: usize, const N: usize> Matrix<M, N> {
     #[inline]
     pub const fn zeros() -> Self { Self { elements: [[0.0; N]; M] } }
 
+    #[inline]
+    pub const fn is_square() -> bool { N == M }
+
     // ── Methods ─────────────────────────────────────────────────────────────
     fn clear_imprecis(&mut self) {
         for row in &mut self.elements {
@@ -35,54 +46,55 @@ impl<const M: usize, const N: usize> Matrix<M, N> {
             }
         }
     }
-   
+
+    fn find_pivot(&self, r: usize, lead: &mut usize) -> Option<usize> {
+        while *lead < N {
+            if let Some(i) = (r..M).find(
+                |&i| self.elements[i][*lead].abs() >= EPSILON
+            ) {
+                return Some(i);
+            }
+            *lead += 1;
+        }
+        None
+    }
+    
+    #[inline]
+    fn row_swap(&mut self, i: usize, j: usize) { self.elements.swap(i, j); }
+
+    fn row_scale(&mut self, row_idx: usize, scaler: f64) {
+        for col_idx in 0..N {
+            self.elements[row_idx][col_idx] /= scaler;
+        }
+    }
+
+    fn row_replace(&mut self, new_r: usize, c: usize) {
+        for r in 0..M {
+            if r != new_r {
+                let factor = self.elements[r][c];
+                for c in 0..N {
+                    self.elements[r][c] -= factor * self.elements[new_r][c];
+                }
+            }
+        }
+    }
+      
     pub fn rref(&mut self) {
         let mut lead = 0;
 
         for r in 0..M {
-            if lead >= N {
-                break;
-            }
+            let Some(i) = self.find_pivot(r, &mut lead) else { break };
 
-            // 1. Find a row with a non-zero element in column `lead`
-            let mut i = r;
-            while self.elements[i][lead].abs() < EPSILON {
-                i += 1;
-                if i == M {
-                    i = r;
-                    lead += 1;
-                    if lead == N {
-                        self.clear_imprecis();
-                        return;
-                    }
-                }
-            }
-
-            // 2. Swap the current row `r` with row `i`
-            self.elements.swap(i, r);
-
-            // 3. Scale the row to make the pivot element equal to 1.0
-            let pivot = self.elements[r][lead];
-            for c in 0..N {
-                self.elements[r][c] /= pivot;
-            }
-
-            // 4. Eliminate all other entries in column `lead`
-            for row in 0..M {
-                if row != r {
-                    let factor = self.elements[row][lead];
-                    for col in 0..N {
-                        self.elements[row][col] -= factor * self.elements[r][col];
-                    }
-                }
-            }
+            self.row_swap(i, r);
+            self.row_scale(r, self.elements[r][lead]);
+            self.row_replace(r, lead);
 
             lead += 1;
         }
 
         self.clear_imprecis();
     }
-
+    
     pub fn as_rref(&self) -> Self {
         let mut self_clone = self.clone();
         self_clone.rref();
@@ -217,4 +229,52 @@ impl<const M: usize, const N: usize> SubAssign for Matrix<M, N> {
     }
 }
 
+// ── `Mul` Implementations ───────────────────────────────────────────────────
+impl<
+    const M: usize,
+    const N: usize,
+    const P: usize
+> Mul<&Matrix<N, P>> for &Matrix<M, N> {
+    type Output = Matrix<M, P>;
+    fn mul(self, rhs: &Matrix<N, P>) -> Self::Output {
+        let mut product = [[0.0f64; P]; M];
 
+        for i in 0..M {
+            for k in 0..N {
+                let a_ik = self.elements[i][k];
+                for j in 0..P {
+                    product[i][j] += a_ik * rhs.elements[k][j];
+                }
+            }
+        }
+
+        Matrix { elements: product }
+    }
+}
+
+impl<
+    const M: usize,
+    const N: usize,
+    const P: usize
+> Mul<Matrix<N, P>> for &Matrix<M, N> {
+    type Output = Matrix<M, P>;
+    fn mul(self, rhs: Matrix<N, P>) -> Self::Output { self * &rhs }
+}
+
+impl<
+    const M: usize,
+    const N: usize,
+    const P: usize
+> Mul<&Matrix<N, P>> for Matrix<M, N> {
+    type Output = Matrix<M, P>;
+    fn mul(self, rhs: &Matrix<N, P>) -> Self::Output { &self * rhs }
+}
+
+impl<
+    const M: usize,
+    const N: usize,
+    const P: usize
+> Mul<Matrix<N, P>> for Matrix<M, N> {
+    type Output = Matrix<M, P>;
+    fn mul(self, rhs: Matrix<N, P>) -> Self::Output { &self * &rhs }
+}
